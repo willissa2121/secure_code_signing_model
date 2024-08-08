@@ -1,0 +1,182 @@
+-- This is a USE model of the first design of a movie rental system
+model SupplyChain
+
+enum EncryptionTypes {RSA, DSA, ECDSA}
+
+enum KeyTypes {GPG, DSA, DiffieHellma}
+
+enum EmploymentTypes {fulltime, parttime, contract}
+
+enum SigTypes {v3, v4}
+
+enum SecureChannels {pgp_mit_edu, keys_openpgp_org, keyserver_ubuntu_co}
+
+class SigningKey
+attributes
+  length : Integer
+  digestAlgo: Integer
+  encryption: EncryptionTypes
+  Type: KeyTypes
+operations
+  getLength(): Integer
+  begin
+    result := self.length;
+  end
+  getDigestAlgo(): Integer
+  begin
+    result := self.digestAlgo;
+  end
+  getEncryption(): EncryptionTypes
+  begin
+    result := self.encryption;
+  end
+  setPriceCode()
+  getTitle()
+  begin
+  end
+end
+
+class PublicKey
+attributes
+  length : Integer
+  digestAlgo: Integer
+  encryption: EncryptionTypes
+  PublicChannel: SecureChannels
+operations
+  getLength(): Integer
+  begin
+    result := self.length;
+  end
+  getDigestAlgo(): Integer
+  begin
+    result := self.digestAlgo;
+  end
+  getEncryption(): EncryptionTypes
+  begin
+    result := self.encryption;
+  end
+  setPriceCode()
+  getTitle()
+  begin
+  end
+end
+
+association keyPairs between
+  PublicKey[1..*] role pubkey
+  SigningKey[1] role signingkey
+end
+
+
+class Users
+attributes
+  name : String
+  email: String
+  employmentType: EmploymentTypes
+operations
+  getName(): String
+  begin
+    result := self.name;
+  end
+  getEmail(): String
+  begin
+    result := self.email;
+  end
+end
+
+association signingKeyUsers between
+  Users[0..*] role keysUsers
+  SigningKey[0..*] role signingkey
+end
+
+class Signatures
+attributes
+  type: SigTypes
+operations
+  getType(): SigTypes
+  begin
+    result := self.type;
+  end
+end
+
+association Sigs between
+  Signatures[0..*] role signatures
+  SigningKey[1] role signingkey
+end
+
+class HSM
+attributes
+  VendorLicenseActive: Boolean
+  Exportable: Boolean
+  HSMLevel: Integer
+end
+
+association Storage between
+  HSM[1..2] role hsm
+  SigningKey[0..*] role signingKey
+end
+
+class DigitalArtifact
+attributes
+  Internal: Boolean
+end
+
+association artifacts between
+  DigitalArtifact[1] role artifacts
+  Signatures[1] role signature
+end
+
+constraints
+
+// Invariant to assert all key owners are full time
+
+context SigningKey
+inv FullTimeEmployeesOnly:
+  self.keysUsers.forAll(u | u.employmentType = EmploymentTypes::fulltime)
+
+// Invariant to assert total volume of key owners is 3 or less per key
+
+context SigningKey
+inv ThreeOrLessAdmins:
+  4 > self.keysUsers->size()
+
+// Invariant to assert that signing key hashing algorithm is secure.
+
+context SigningKey
+inv digestAlgoSecure:
+  self.digestAlgo > 7
+
+// Invariant to assert that signing key minimum length is sufficient
+
+context SigningKey
+inv keyLength:
+  self.length >= 2048
+
+// Invariant to assert that all signatures of all keys are v4
+
+context SigningKey
+inv sigVersion:
+  self.signatures.forAll(s | s.type = SigTypes::v4)
+
+
+// Invariant to assert all public keys of any signing key are publically avaiable 
+
+context SigningKey
+inv publicKeyPublic:
+  self.pubkey.forAll(p | p.PublicChannel <> null)
+
+
+// Invariant to assert that all Signing keys belong to to an HSM and that less than 3 exist
+
+context SigningKey
+inv hsmExists:
+  not self.hsm->isEmpty()
+
+// Invariant to assert that all HSM with more than 0 signing keys do not allow export protections
+
+context SigningKey
+inv hsmProtections:
+  self.hsm.forAll(h | h.Exportable = false and h.HSMLevel >= 3 and h.VendorLicenseActive = true)
+
+context SigningKey
+inv internalSignatures:
+  self.signatures.forAll(s | s.artifacts.Internal = true)
